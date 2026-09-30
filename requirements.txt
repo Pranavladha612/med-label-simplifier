@@ -1,0 +1,15 @@
+# Install PyTorch first (CPU build, no GPU needed):
+#   pip install torch --index-url https://download.pytorch.org/whl/cpu
+# Then:
+#   pip install -r requirements.txt
+
+requests         # talk to the openFDA API
+openai           # client library; OpenRouter speaks the same API format
+python-dotenv    # load the API key from the .env file
+transformers     # runs the NLI (fact-checking) model locally
+textstat         # readability scores (Flesch-Kincaid grade)
+streamlit        # the web app
+pandas           # tables of results
+matplotlib       # charts in the evaluation notebook
+jupyter          # to open the evaluation notebook
+pytest           # to run the tests
