@@ -134,9 +134,9 @@ python cli.py loratadine --sections warnings stop_use
 python cli.py acetaminophen --no-nli
 ```
 
-**Evaluation** (many drugs, then open the notebook):
+**Evaluation** (many drugs, then open the notebook). `--quick` runs 8 drugs on the key sections and fits in one day of free requests:
 ```bash
-python evaluate.py
+python evaluate.py --quick
 jupyter notebook notebooks/evaluation.ipynb
 ```
 
