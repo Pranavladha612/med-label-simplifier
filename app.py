@@ -1,28 +1,14 @@
 """Streamlit web app.   Run with:  streamlit run app.py"""
 
-import html
-import re
-
 import streamlit as st
 
 from medsimp import config
-from medsimp.facts import extract_quantities
 from medsimp.fetch import pretty_section_name
 from medsimp.pipeline import simplify_drug
+from medsimp.render import CSS, LEGEND, fact_spans, flag_label, highlight
 
 st.set_page_config(page_title="Plain-Language Drug Labels", page_icon="💊", layout="wide")
-
-st.markdown(
-    """
-    <style>
-    .fact-kept    { background: rgba(34,160,90,.22);  border-radius: 3px; padding: 0 2px; }
-    .fact-missing { background: rgba(220,50,50,.28);  border-radius: 3px; padding: 0 2px; font-weight: 600; }
-    .fact-invented{ background: rgba(230,140,20,.30); border-radius: 3px; padding: 0 2px; font-weight: 600; }
-    .label-box    { line-height: 1.65; font-size: 0.97rem; white-space: pre-wrap; }
-    </style>
-    """,
-    unsafe_allow_html=True,
-)
+st.markdown(CSS, unsafe_allow_html=True)
 
 st.title("💊 Plain-Language Drug Labels")
 st.caption("Rewrites drug labels at a ~5th-grade reading level, then checks that no dose, time, or warning was lost.")
@@ -48,24 +34,9 @@ with st.sidebar:
     st.divider()
     st.caption(f"Model: `{config.OPENROUTER_MODEL}`  \nChange it in the `.env` file.")
 
-    st.markdown(
-        '**Legend**  \n<span class="fact-kept">kept fact</span> '
-        '<span class="fact-missing">missing fact</span> '
-        '<span class="fact-invented">invented number</span>',
-        unsafe_allow_html=True,
-    )
+    st.markdown("**Legend**  \n" + LEGEND, unsafe_allow_html=True)
 
 CORE_SECTIONS = ["dosage_and_administration", "warnings", "stop_use", "boxed_warning", "contraindications"]
-
-
-def highlight(text: str, spans: list[tuple[str, str]]) -> str:
-    """HTML-escape text and wrap each (phrase, css_class) occurrence in a <span>."""
-    out = html.escape(text)
-    for phrase, css in sorted(spans, key=lambda s: -len(s[0])):  # longest first
-        pattern = re.compile(rf"(?<![\w>]){re.escape(html.escape(phrase))}(?!\w)", re.IGNORECASE)
-        out = pattern.sub(lambda m: f'<span class="{css}">{m.group(0)}</span>', out, count=1)
-    return f'<div class="label-box">{out}</div>'
-
 
 if run:
     status = st.status(f"Working on **{drug}**…", expanded=True)
@@ -115,11 +86,7 @@ for s in sections:
     icon = "✅" if s.passed and not (s.nli and s.nli.flags) else ("⚠️" if s.passed else "❌")
     with st.expander(f"{icon} {pretty_section_name(s.name)}", expanded=True):
         left, right = st.columns(2)
-        orig_spans = [(f.text, "fact-kept") for f in s.fact_check.kept] + \
-                     [(f.text, "fact-missing") for f in s.fact_check.missing]
-        kept_keys = {f.key for f in s.fact_check.kept}
-        simp_spans = [(f.text, "fact-kept") for f in extract_quantities(s.simplified) if f.key in kept_keys] + \
-                     [(f.text, "fact-invented") for f in s.fact_check.invented]
+        orig_spans, simp_spans = fact_spans(s)
         with left:
             b = s.readability_before
             st.markdown(f"**Original** · grade {b['fk_grade']} · {b['hard_words_pct']}% hard words")
@@ -140,12 +107,8 @@ for s in sections:
             st.error(problem)
         if s.nli:
             for flag in s.nli.flags:
-                if flag.kind == "contradiction":
-                    st.error(f"**Contradiction** ({flag.score:.0%}): {flag.sentence}")
-                elif flag.direction == "lost":
-                    st.warning(f"**Possibly lost** (original idea not clearly found): {flag.sentence}")
-                else:
-                    st.warning(f"**Possibly unsupported** (not clearly in the original): {flag.sentence}")
+                text, css = flag_label(flag)
+                (st.error if css == "ms-bad" else st.warning)(text)
 
         if s.retries:
             with st.popover(f"See all {len(s.attempts)} attempts"):

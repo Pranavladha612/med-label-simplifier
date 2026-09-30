@@ -1,6 +1,11 @@
 # 💊 Plain-Language Drug Labels
 
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/Pranavladha612/med-label-simplifier/blob/main/colab_demo.ipynb)
+
 **Simplify medication labels for low-literacy readers, then *prove* nothing safety-critical was lost.**
+
+▶ **Try it in your browser:** click the badge above. The Colab demo runs the fact checker and the
+hallucination check with no setup; add a free OpenRouter key to run the full pipeline on any medicine.
 
 > ⚠️ **Not medical advice.** This is a research prototype. Simplified text may contain errors
 > and must be reviewed by a pharmacist before anyone relies on it.
