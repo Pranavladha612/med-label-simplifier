@@ -1,68 +1,45 @@
 """Step 3: ask the LLM to rewrite label text in plain language.
 
-The first prompt sets the rules. If verification finds problems, we send a "fix-it" prompt
-that lists exactly what went wrong, and try again.
+The prompts themselves live in prompts/prompts.yaml. The system prompt sets the rules; the
+"simplify" prompt carries the label text. If verification finds problems, the "fix" prompt lists
+exactly what went wrong, and the model tries again.
 """
 
 import re
+from functools import lru_cache
+
+import yaml
 
 from . import config, llm
 
-SIMPLIFY_PROMPT = """You rewrite medicine label text so that people with low reading skills can understand it.
 
-Rules:
-1. Write at about a grade {grade} reading level. Use short sentences with one idea each.
-2. Use everyday words. Speak to the reader as "you".
-3. When a medical word must stay (like "NSAID"), explain it in simple words the first time.
-   Don't explain words a child already knows.
-4. Keep EVERY number, dose, amount, time, and age. Write them as digits, with the same units (for example "4 to 6 hours", "12 years", "200 mg").
-5. Keep EVERY warning and every "ask a doctor" or "stop using" instruction.
-6. Do NOT add any facts, doses, or advice that are not in the original text.
-7. Use a short bulleted list (lines starting with "- ") when the original is a list.
-8. Reply with ONLY the rewritten text. No introduction and no notes.
+@lru_cache(maxsize=1)
+def load_prompts() -> dict:
+    """Read prompts/prompts.yaml once."""
+    with open(config.PROMPTS_FILE, encoding="utf-8") as f:
+        prompts = yaml.safe_load(f)
+    for key in ("system", "simplify", "fix"):
+        if key not in prompts:
+            raise KeyError(f"{config.PROMPTS_FILE} is missing the '{key}' prompt")
+    return prompts
 
-Label section: {section}
 
-Original text:
-\"\"\"
-{text}
-\"\"\"
-"""
-
-FIX_PROMPT = """You rewrote a medicine label section in plain language, but a safety check found problems.
-
-Original text:
-\"\"\"
-{original}
-\"\"\"
-
-Your rewrite:
-\"\"\"
-{previous}
-\"\"\"
-
-Problems to fix:
-{problems}
-
-Write a corrected version. Fix only these problems and keep the rest of your rewrite as it is.
-Stay at a grade {grade} reading level: put the missing facts in simple words, and do NOT copy
-difficult wording from the original. Keep every number and warning exactly, and add nothing new.
-Reply with ONLY the corrected text."""
+def _system_prompt() -> str:
+    return load_prompts()["system"].format(grade=config.TARGET_GRADE).strip()
 
 
 def simplify(text: str, section: str) -> str:
-    prompt = SIMPLIFY_PROMPT.format(grade=config.TARGET_GRADE, section=section, text=text)
-    return clean_reply(llm.ask(prompt))
+    user = load_prompts()["simplify"].format(section=section, text=text).strip()
+    return clean_reply(llm.ask(user, system=_system_prompt()))
 
 
 def fix(original: str, previous: str, problems: list[str]) -> str:
-    prompt = FIX_PROMPT.format(
+    user = load_prompts()["fix"].format(
         original=original,
         previous=previous,
         problems="\n".join(f"- {p}" for p in problems),
-        grade=config.TARGET_GRADE,
-    )
-    return clean_reply(llm.ask(prompt))
+    ).strip()
+    return clean_reply(llm.ask(user, system=_system_prompt()))
 
 
 def clean_reply(reply: str) -> str:
@@ -70,6 +47,7 @@ def clean_reply(reply: str) -> str:
     reply = reply.strip().strip('"').strip()
     reply = re.sub(r"^```\w*\n?|\n?```$", "", reply).strip()
     reply = re.sub(r"^(here is|here's)[^\n]*:\s*\n", "", reply, flags=re.IGNORECASE).strip()
+    reply = re.sub(r"^<rewrite>|</rewrite>$", "", reply).strip()   # in case the model echoes the tags
     return reply
 
 

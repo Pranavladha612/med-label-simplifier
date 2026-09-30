@@ -6,6 +6,7 @@
 requests         # talk to the openFDA API
 openai           # client library; OpenRouter speaks the same API format
 python-dotenv    # load the API key from the .env file
+pyyaml           # read config.yaml and prompts/prompts.yaml
 transformers     # runs the NLI (fact-checking) model locally
 textstat         # readability scores (Flesch-Kincaid grade)
 streamlit        # the web app

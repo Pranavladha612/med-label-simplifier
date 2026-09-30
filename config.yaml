@@ -1,0 +1,45 @@
+# Project configuration. Every tunable setting lives here; the code reads it through medsimp/config.py.
+# Secrets never go in this file: the API key belongs in .env (see .env.example).
+
+llm:
+  provider: openrouter                      # OpenRouter speaks the OpenAI API format
+  base_url: https://openrouter.ai/api/v1
+  model: google/gemma-4-31b-it:free         # can be overridden by OPENROUTER_MODEL in .env
+  fallback_models:                          # tried in order when the main model is busy
+    - qwen/qwen3.8-27b:free
+    - nvidia/nemotron-3-super-120b-a12b:free
+  temperature: 0                            # repeatable output; we want faithful rewrites, not creativity
+  max_tokens: null                          # no cap: reasoning models count hidden "thinking" tokens here too
+  timeout_seconds: 180                      # give up on a single request after this long
+  max_attempts: 4                           # retries for busy / failed requests
+
+prompts:
+  file: prompts/prompts.yaml                # all LLM prompts live in this file
+
+simplification:
+  target_grade: 5                           # reading level the rewrite aims for
+  max_fix_retries: 2                        # regenerate at most this many times when checks fail
+  max_chunk_words: 250                      # long sections are split so each piece fits the NLI model
+  # openFDA label sections to simplify. OTC labels use the first group, prescription labels the second.
+  sections:
+    - dosage_and_administration
+    - warnings
+    - do_not_use
+    - ask_doctor
+    - ask_doctor_or_pharmacist
+    - when_using
+    - stop_use
+    - pregnancy_or_breast_feeding
+    - boxed_warning
+    - contraindications
+    - drug_interactions
+
+verification:
+  nli_model: cross-encoder/nli-deberta-v3-small   # runs locally on CPU (~500 MB download once)
+  nli_candidates: 3                         # compare each sentence with the 3 most similar on the other side
+  entail_threshold: 0.5                     # sentence counts as supported at or above this probability
+  contradict_threshold: 0.7                 # sentence counts as contradicted at or above this probability
+
+paths:
+  cache_dir: cache                          # cached openFDA labels and LLM replies
+  results_dir: results                      # evaluation output

@@ -28,7 +28,9 @@ def _get_client() -> OpenAI:
                 "No OpenRouter API key found. Copy .env.example to .env and paste your key "
                 "(get one at https://openrouter.ai/keys)."
             )
-        _client = OpenAI(base_url=config.OPENROUTER_BASE_URL, api_key=config.OPENROUTER_API_KEY, timeout=180)
+        _client = OpenAI(
+            base_url=config.OPENROUTER_BASE_URL, api_key=config.OPENROUTER_API_KEY, timeout=config.TIMEOUT_SECONDS
+        )
     return _client
 
 
@@ -47,10 +49,11 @@ def _error_message(response) -> str:
     return str(error) if error else "no answer in the response"
 
 
-def ask(prompt: str, model: str | None = None, use_cache: bool = True) -> str:
-    """Send one prompt to the model and return its text reply."""
+def ask(prompt: str, system: str | None = None, model: str | None = None, use_cache: bool = True) -> str:
+    """Send a user prompt (plus an optional system prompt) to the model and return its text reply."""
     model = model or config.OPENROUTER_MODEL
-    cache_key = hashlib.sha256(f"{model}\n{prompt}".encode()).hexdigest()[:24]
+    messages = ([{"role": "system", "content": system}] if system else []) + [{"role": "user", "content": prompt}]
+    cache_key = hashlib.sha256(f"{model}\n{system or ''}\n{prompt}".encode()).hexdigest()[:24]
     cache_file = config.CACHE_DIR / "llm" / f"{cache_key}.json"
     if use_cache and cache_file.exists():
         cached = json.loads(cache_file.read_text(encoding="utf-8"))
@@ -58,12 +61,13 @@ def ask(prompt: str, model: str | None = None, use_cache: bool = True) -> str:
         return cached["reply"]
 
     last_problem = "all models busy"
-    for attempt in range(4):
+    for attempt in range(config.MAX_ATTEMPTS):
         try:
             response = _get_client().chat.completions.create(
                 model=model,
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0,  # as repeatable as possible
+                messages=messages,
+                temperature=config.TEMPERATURE,
+                **({"max_tokens": config.MAX_TOKENS} if config.MAX_TOKENS else {}),
                 extra_body={
                     # OpenRouter-specific: fall back to other models if this one is busy...
                     "models": [model] + [m for m in config.OPENROUTER_FALLBACK_MODELS if m != model],
@@ -94,18 +98,18 @@ def ask(prompt: str, model: str | None = None, use_cache: bool = True) -> str:
             print(f"All models busy, waiting {wait}s and retrying...")
             time.sleep(wait)
         except APIStatusError as error:
-            if error.status_code >= 500 and attempt < 3:
+            if error.status_code >= 500 and attempt < config.MAX_ATTEMPTS - 1:
                 time.sleep(5)
                 continue
             raise
     else:
-        raise RuntimeError(f"OpenRouter failed 4 times ({last_problem}). Try again in a few minutes.")
+        raise RuntimeError(f"OpenRouter failed {config.MAX_ATTEMPTS} times ({last_problem}). Try again in a few minutes.")
 
     models_used.add(response.model)
 
     cache_file.parent.mkdir(parents=True, exist_ok=True)
     cache_file.write_text(
-        json.dumps({"model": model, "answered_by": response.model, "prompt": prompt, "reply": reply}, indent=2),
+        json.dumps({"model": model, "answered_by": response.model, "system": system, "prompt": prompt, "reply": reply}, indent=2),
         encoding="utf-8",
     )
     return reply

@@ -1,0 +1,76 @@
+# All LLM prompts for the medication-label simplifier.
+#
+# Placeholders in {curly braces} are filled in by medsimp/simplify.py:
+#   {grade}     target reading grade (config.yaml -> simplification.target_grade)
+#   {section}   label section name, e.g. "Warnings"
+#   {text}      original label text to simplify
+#   {original}  original text (fix prompt)
+#   {previous}  the model's previous rewrite (fix prompt)
+#   {problems}  bullet list of problems found by the fact and meaning checks (fix prompt)
+#
+# Prompt-engineering techniques used, and why:
+#   1. System / user split: the rules are stable across every call, so they go in the system
+#      message; only the label text changes in the user message.
+#   2. Role + audience: the model is told who it writes for (low-literacy readers), which steers
+#      word choice better than "make it simpler".
+#   3. Explicit, numbered, testable rules: each rule matches something the verifier checks
+#      (numbers kept as digits, every warning kept, nothing added), so failures are measurable.
+#   4. One worked example (one-shot): shows the exact output style, including keeping every
+#      number and turning a run-on openFDA list into bullets. It uses a different drug than the
+#      ones in the demo, so the model can't just copy it.
+#   5. Delimiters: label text is wrapped in <label> tags so the model can't confuse the label's
+#      own instructions ("ask a doctor") with instructions to itself.
+#   6. Output contract: "reply with ONLY the rewritten text" plus a cleanup step in code, so the
+#      reply can be verified directly without parsing.
+#   7. Targeted repair prompt: when checks fail, the model gets the exact problems as a list and
+#      is told to change only those. Earlier versions let the model "fix" things by copying the
+#      difficult original wording back in, so this prompt explicitly forbids that.
+
+version: 3
+
+system: |
+  You rewrite medicine label text so that people with low reading skills can understand it.
+  Your readers may read at about a grade {grade} level. Their safety depends on your rewrite being complete and correct.
+
+  Rules:
+  1. Write at about a grade {grade} reading level. Use short sentences with one idea each.
+  2. Use everyday words and speak to the reader as "you".
+  3. If a medical word must stay (like "NSAID"), explain it in simple words the first time. Do not explain words a child already knows.
+  4. Keep EVERY number, dose, amount, time and age. Write them as digits with the same units, for example "4 to 6 hours", "12 years", "200 mg".
+  5. Keep EVERY warning and every "ask a doctor" or "stop using" instruction.
+  6. Do NOT add any facts, doses, side effects or advice that are not in the original text.
+  7. When the original is a list, use a short bulleted list with lines starting with "- ".
+  8. Reply with ONLY the rewritten text. No introduction, no notes, no headings you invented.
+
+  Example
+  Original (Directions):
+  <label>adults and children 12 years and over take 2 caplets every 6 hours while symptoms last do not take more than 8 caplets in 24 hours children under 12 years ask a doctor do not use for more than 7 days unless directed by a doctor</label>
+  Rewrite:
+  - If you are 12 years or older, take 2 caplets every 6 hours while you still feel sick.
+  - Do not take more than 8 caplets in 24 hours.
+  - If you are under 12 years old, ask a doctor first.
+  - Do not use this medicine for more than 7 days unless a doctor tells you to.
+
+simplify: |
+  Label section: {section}
+
+  <label>{text}</label>
+
+  Rewrite this section following the rules.
+
+fix: |
+  You rewrote a medicine label section in plain language, but a safety check found problems.
+
+  Original:
+  <label>{original}</label>
+
+  Your rewrite:
+  <rewrite>{previous}</rewrite>
+
+  Problems to fix:
+  {problems}
+
+  Write a corrected version. Change only what is needed to fix these problems and keep the rest of your rewrite as it is.
+  Put any missing facts in simple words. Do NOT copy difficult wording from the original.
+  Keep every number and warning exactly, and add nothing new.
+  Reply with ONLY the corrected text.

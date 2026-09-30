@@ -32,7 +32,7 @@ with st.sidebar:
                                help="Off = only directions, warnings and 'stop use' (fewer API calls).")
     run = st.button("Simplify label", type="primary", disabled=not drug, use_container_width=True)
     st.divider()
-    st.caption(f"Model: `{config.OPENROUTER_MODEL}`  \nChange it in the `.env` file.")
+    st.caption(f"Model: `{config.OPENROUTER_MODEL}`  \nChange it in `config.yaml`.")
 
     st.markdown("**Legend**  \n" + LEGEND, unsafe_allow_html=True)
 

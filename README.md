@@ -41,10 +41,67 @@ openFDA label ──► split into sections ──► LLM simplifies (grade 5)
 |---|---|---|
 | 1. Fetch | `medsimp/fetch.py` | Downloads labels from the free [openFDA API](https://open.fda.gov/apis/drug/label/) |
 | 2. Extract facts | `medsimp/facts.py` | Rule-based extraction of quantities ("1 or 2 tablets", "every 4 to 6 hours", "age 60") and warning concepts |
-| 3. Simplify | `medsimp/simplify.py` | Prompts the LLM (via [OpenRouter](https://openrouter.ai)) |
+| 3. Simplify | `medsimp/simplify.py` + `prompts/prompts.yaml` | Prompts the LLM (via [OpenRouter](https://openrouter.ai)) |
 | 4. Verify | `medsimp/facts.py`, `medsimp/verify.py` | Fact recall + invented numbers; "retrieve-then-verify" NLI with `cross-encoder/nli-deberta-v3-small` running locally |
 | 5. Measure | `medsimp/readability.py` | Flesch-Kincaid grade, % hard words |
 | Glue | `medsimp/pipeline.py` | Runs the loop and retries |
+
+## Project structure
+
+```
+med-label-simplifier/
+├── config.yaml              ← configuration file: model, fallbacks, temperature, retries, thresholds, sections
+├── prompts/prompts.yaml     ← prompt file: system, simplify and fix prompts, with design notes
+├── .env.example             ← template for the API key (the real .env is git-ignored)
+├── requirements.txt
+├── app.py                   ← Streamlit web app
+├── cli.py                   ← command-line tool
+├── evaluate.py              ← runs the pipeline on many drugs and saves metrics
+├── colab_demo.ipynb         ← browser demo (Open in Colab badge above)
+├── medsimp/                 ← the pipeline
+│   ├── config.py            ← reads config.yaml and .env
+│   ├── llm.py               ← OpenRouter client: fallbacks, retries, caching, error handling
+│   ├── fetch.py  facts.py  simplify.py  verify.py  readability.py  pipeline.py  render.py
+├── notebooks/evaluation.ipynb
+└── tests/                   ← 22 tests (pytest)
+```
+
+## How the LLM is used
+
+The LLM is called through the **OpenRouter API** (`medsimp/llm.py`), which uses the OpenAI API format and
+gives access to many models with one key.
+
+- **Two jobs:** it *simplifies* each label section, and when the checks find a problem it *repairs* its own
+  rewrite from a precise list of what went wrong. That makes a generate → verify → repair loop.
+- **Reliability:** automatic fallback to other models when the main one is busy, retries with backoff,
+  a timeout, clear errors for daily-limit and empty replies, and hidden "thinking" text from reasoning models.
+- **Efficiency:** `temperature: 0` for repeatable results; every reply is cached on disk (keyed on
+  model + prompts), so re-runs and the evaluation never pay twice; long sections are split into ≤250-word chunks.
+
+## Prompt design (`prompts/prompts.yaml`)
+
+| Technique | Why |
+|---|---|
+| System / user split | The rules are the same for every call, so they live in the system prompt. Only the label text changes. |
+| Role + audience | "Your readers may read at about a grade 5 level. Their safety depends on…" steers word choice better than "make it simpler". |
+| Numbered, testable rules | Each rule matches something the verifier checks (numbers as digits, keep every warning, add nothing), so failures are measurable. |
+| One-shot example | Shows the output style, including turning an unpunctuated openFDA list into bullets and keeping every number. It uses a different drug from the demos. |
+| Delimiters | Label text goes inside `<label>` tags, so the label's own instructions ("ask a doctor") aren't mistaken for instructions to the model. |
+| Output contract | "Reply with ONLY the rewritten text", plus a cleanup step in code, so replies can be verified directly. |
+| Targeted repair prompt | Lists the exact problems and says to change only those. It forbids copying jargon from the original, which earlier versions did. |
+
+**Effect of the prompt file (v3) vs. the earlier single-message prompt**, same free models, same labels
+(Directions, Warnings and Stop-use sections):
+
+| | Earlier prompt | `prompts.yaml` v3 |
+|---|---|---|
+| Ibuprofen: reading grade / hard words | 5.2 / 11% | **4.4 / 9%** |
+| Loratadine: reading grade / hard words | 6.3 / 20% | **5.1 / 15%** |
+| Critical facts kept | 34/34 and 16/16 | 34/34 and 16/16 |
+| Invented numbers | 0 | 0 |
+
+Simpler text with no loss of safety-critical facts. This is two drugs; `python evaluate.py` runs the
+full 12-drug comparison.
 
 ## Setup (Windows)
 
@@ -57,7 +114,8 @@ copy .env.example .env
 ```
 
 Then open `.env` and paste your OpenRouter key (from https://openrouter.ai/keys).
-Any model from https://openrouter.ai/models works; ids ending in `:free` cost nothing.
+To change the model or any other setting, edit `config.yaml`. Any model from
+https://openrouter.ai/models works; ids ending in `:free` cost nothing.
 
 The first run downloads the NLI model (about 500 MB), once.
 
