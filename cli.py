@@ -11,6 +11,7 @@ import sys
 
 from medsimp.fetch import pretty_section_name
 from medsimp.pipeline import simplify_drug
+from medsimp.render import flag_label
 
 DISCLAIMER = "NOT MEDICAL ADVICE. Research prototype. Simplified text must be reviewed by a pharmacist."
 
@@ -42,10 +43,10 @@ def main():
         if s.nli:
             print(f"NLI: coverage {s.nli.coverage:.0%}, faithfulness {s.nli.faithfulness:.0%}")
             for flag in s.nli.flags:
-                label = {"lost": "possibly lost", "unsupported": "possibly unsupported"}[flag.direction]
-                if flag.kind == "contradiction":
-                    label = "CONTRADICTION"
-                print(f"  {label}: {flag.sentence}")
+                label, _ = flag_label(flag)
+                print(f"  {'CONTRADICTION: ' + flag.sentence if flag.hard else label}")
+        for problem in s.problems:
+            print(f"  PROBLEM LEFT FOR REVIEW: {problem}")
     print(f"\n{DISCLAIMER}")
 
 

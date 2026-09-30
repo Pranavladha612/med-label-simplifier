@@ -48,8 +48,12 @@ def fact_spans(section) -> tuple[list, list]:
 
 def flag_label(flag) -> tuple[str, str]:
     """(text, css class) describing an NLI flag for people."""
-    if flag.kind == "contradiction":
+    if flag.hard:
         return f"Contradiction ({flag.score:.0%}): {flag.sentence}", "ms-bad"
+    if flag.kind == "contradiction" and flag.direction == "lost":
+        return f"Possibly changed meaning (original sentence vs. the rewrite): {flag.sentence}", "ms-warn"
+    if flag.kind == "contradiction":
+        return f"Possible contradiction (low confidence: compared with a run-on fragment): {flag.sentence}", "ms-warn"
     if flag.direction == "lost":
         return f"Possibly lost (original idea not clearly found): {flag.sentence}", "ms-warn"
     return f"Possibly unsupported (not clearly in the original): {flag.sentence}", "ms-warn"

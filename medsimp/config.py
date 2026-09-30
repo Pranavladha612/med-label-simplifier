@@ -25,6 +25,7 @@ _fallbacks_env = os.getenv("OPENROUTER_FALLBACK_MODELS")
 OPENROUTER_FALLBACK_MODELS = (
     [m.strip() for m in _fallbacks_env.split(",") if m.strip()] if _fallbacks_env else list(_llm["fallback_models"])
 )
+REASONING = bool(_llm.get("reasoning", False))
 TEMPERATURE = _llm["temperature"]
 MAX_TOKENS = _llm["max_tokens"]
 TIMEOUT_SECONDS = _llm["timeout_seconds"]

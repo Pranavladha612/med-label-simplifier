@@ -43,6 +43,22 @@ def test_real_label_phrasings():
         == {"3 drink", "60 year"}
 
 
+def test_unit_is_not_taken_as_a_describing_word():
+    # Real bug on naproxen: "500 mg tablet" was read as "500 tablets".
+    assert keys(extract_quantities("take one 500 mg tablet")) == {"500 mg"}
+    assert keys(extract_quantities("naproxen tablets 500 mg twice daily")) == {"500 mg", "2 time"}
+
+
+def test_spelled_out_fractions():
+    # Real false alarm on naproxen: the label says "one-half tablet", the rewrite "half tablet".
+    assert keys(extract_quantities("250 mg (one-half tablet)")) == {"250 mg", "0.5 tablet"}
+    assert keys(extract_quantities("take half a tablet")) == {"0.5 tablet"}
+    assert keys(extract_quantities("take a half tablet")) == {"0.5 tablet"}
+    assert keys(extract_quantities("one half tablet")) == {"0.5 tablet"}
+    assert keys(extract_quantities("one and one-half tablets")) == {"1.5 tablet"}
+    assert keys(extract_quantities("1375 mg (two and one-half tablets)")) == {"1375 mg", "2.5 tablet"}
+
+
 def test_no_false_units_inside_words():
     # "gel" should not be read as "g", and "days" words without numbers are ignored
     assert extract_quantities("apply the gel for several days") == []
@@ -51,6 +67,26 @@ def test_no_false_units_inside_words():
 def test_warning_concepts():
     found = keys(extract_facts("Allergy alert: may cause a severe allergic reaction. Stomach bleeding warning"))
     assert {"allergic reaction", "bleeding"} <= found
+
+
+def test_liver_is_not_found_inside_delivery():
+    # Real bug: "delivery" matched the liver pattern, the checker asked for a liver warning,
+    # and the LLM invented "Do not use if you have liver problems."
+    assert "liver" not in keys(extract_facts("may cause complications during delivery"))
+    assert "liver" in keys(extract_facts("ask a doctor if you have liver disease"))
+    assert "liver" in keys(extract_facts("hepatic impairment"))
+
+
+def test_concept_words_are_matched_as_whole_words():
+    assert "kidney" not in keys(extract_facts("contains adrenaline"))
+    assert "kidney" in keys(extract_facts("renal impairment"))
+
+
+def test_simplified_side_ignores_look_alike_words():
+    original = "ask a doctor if you have heart disease, seizures or liver problems, or suicidal thoughts. stop use if"
+    simplified = "It may help with heartburn. The benefit is nonstop. Use a painkiller. Take it after delivery."
+    missing = keys(compare_facts(original, simplified).missing)
+    assert {"heart disease", "seizures", "liver", "suicidal thoughts", "stop use"} <= missing
 
 
 def test_good_simplification_keeps_everything():

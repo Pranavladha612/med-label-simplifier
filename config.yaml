@@ -6,8 +6,12 @@ llm:
   base_url: https://openrouter.ai/api/v1
   model: google/gemma-4-31b-it:free         # can be overridden by OPENROUTER_MODEL in .env
   fallback_models:                          # tried in order when the main model is busy
+    - nvidia/nemotron-3-super-120b-a12b:free  # ~2 s per call with reasoning off
     - qwen/qwen3.8-27b:free
-    - nvidia/nemotron-3-super-120b-a12b:free
+  # Many free models "think" silently before answering. For a rewrite task that costs minutes per call
+  # (measured: Qwen spent 5,913 hidden tokens / 202 s on one section vs 2 s for Nemotron with it off),
+  # and the fact + meaning checks catch mistakes anyway. Set to true to let models reason.
+  reasoning: false
   temperature: 0                            # repeatable output; we want faithful rewrites, not creativity
   max_tokens: null                          # no cap: reasoning models count hidden "thinking" tokens here too
   timeout_seconds: 180                      # give up on a single request after this long

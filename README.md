@@ -63,7 +63,7 @@ med-label-simplifier/
 │   ├── llm.py               ← OpenRouter client: fallbacks, retries, caching, error handling
 │   ├── fetch.py  facts.py  simplify.py  verify.py  readability.py  pipeline.py  render.py
 ├── notebooks/evaluation.ipynb
-└── tests/                   ← 22 tests (pytest)
+└── tests/                   ← 30 tests (pytest)
 ```
 
 ## How the LLM is used
@@ -74,7 +74,8 @@ gives access to many models with one key.
 - **Two jobs:** it *simplifies* each label section, and when the checks find a problem it *repairs* its own
   rewrite from a precise list of what went wrong. That makes a generate → verify → repair loop.
 - **Reliability:** automatic fallback to other models when the main one is busy, retries with backoff,
-  a timeout, clear errors for daily-limit and empty replies, and hidden "thinking" text from reasoning models.
+  a timeout, and clear errors for daily-limit and empty replies.
+- **Speed:** model "thinking" is switched off for this rewrite task (about 100× faster per call; see design note 7).
 - **Efficiency:** `temperature: 0` for repeatable results; every reply is cached on disk (keyed on
   model + prompts), so re-runs and the evaluation never pay twice; long sections are split into ≤250-word chunks.
 
@@ -95,7 +96,7 @@ gives access to many models with one key.
 
 | | Earlier prompt | `prompts.yaml` v3 |
 |---|---|---|
-| Ibuprofen: reading grade / hard words | 5.2 / 11% | **4.4 / 9%** |
+| Ibuprofen: reading grade / hard words | 5.2 / 11% | **4.3 / 9%** |
 | Loratadine: reading grade / hard words | 6.3 / 20% | **5.1 / 15%** |
 | Critical facts kept | 34/34 and 16/16 | 34/34 and 16/16 |
 | Invented numbers | 0 | 0 |
@@ -182,6 +183,23 @@ These came up while building the project and are worth discussing in a write-up:
    shown for human review.
 4. **openFDA text has no punctuation in lists**, which breaks sentence splitting and inflates
    readability scores. Every line is now treated as a sentence when measuring readability.
+5. **A checker bug can *cause* hallucinations.** The liver pattern matched "de*liver*y", so the checker
+   demanded a missing "liver warning", and the model obediently added *"Do not use if you have liver
+   problems"*, which the label never says. An audit of every concept pattern against real label text
+   found four more look-alikes ("ad*renal*ine", "*heart*burn", "bene*fit*", "pain*kill*er"). All now use
+   word boundaries, with regression tests.
+6. **Contradiction scores can't be thresholded away.** Correct sentences such as "Stop use and ask a
+   doctor if you have chest pain" scored 1.00 contradiction against chopped-up run-on list fragments,
+   the same as a real contradiction (0.997). What separates them is the evidence: a retry is triggered
+   only when the contradicting original text is a clean sentence (capital letter to full stop).
+   Contradictions against run-on fragments are shown for human review.
+7. **Hidden "thinking" dominated run time.** Free reasoning models spent up to ~6,000 hidden tokens
+   (over 3 minutes) per section. Turning reasoning off (`llm.reasoning: false` in `config.yaml`) brought a
+   call down to about 2–7 seconds; the fact and meaning checks still catch mistakes.
+8. **Prescription labels stress the fact parser.** On naproxen, "500 mg tablet" was first read as
+   "500 tablets" and the label's "one-half tablet" as a range, which caused false "invented" alarms.
+   Both are fixed and tested. The one remaining flag was real: the model worked out on its own that
+   750 mg is "one and one-half tablets", a claim the label doesn't make for that dose, so it's left for review.
 
 ## Known limitations
 

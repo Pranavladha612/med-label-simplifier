@@ -26,8 +26,12 @@ WORD_NUMBERS = {
     "half": "0.5", "½": "0.5",
 }
 
-# A single number: 200, 0.5, 1/2, or a word like "two".
-_NUM = r"(?:\d+(?:\.\d+)?(?:/\d+)?|½|" + "|".join(w for w in WORD_NUMBERS if w != "½") + r")"
+# Spelled-out fractions used on labels: "one-half", "a half", "one and one-half", "two and one-half".
+# Listed first so "one-half" isn't read as the range "one to half".
+_FRACTION = r"(?:(?:\d+|one|two|three|four|five)\s+and\s+)?(?:one|a)[- ]half"
+# A single number: 200, 0.5, 1/2, a fraction, or a word like "two".
+_NUM = (rf"(?:{_FRACTION}|\d+(?:\.\d+)?(?:/\d+)?|½|"
+        + "|".join(w for w in WORD_NUMBERS if w != "½") + r")")
 # A number or a range: "4 to 6", "4-6", "1 or 2".
 _RANGE = rf"(?P<low>{_NUM})(?:\s*(?:to|-|–|or)\s*(?P<high>{_NUM}))?"
 
@@ -71,7 +75,9 @@ _ALL_UNITS = "|".join(s for spellings in UNITS.values() for s in spellings)
 QUANTITY_RE = re.compile(
     rf"(?<![\w.]){_RANGE}"
     r"(?:\s+or\s+more)?"          # "3 or more drinks"
-    r"(?:\s+[a-z-]+)?"            # one describing word: "3 alcoholic drinks", "2 regular tablets"
+    # one describing word: "3 alcoholic drinks", "2 regular tablets". It must not itself be a unit,
+    # or "500 mg tablet" would be read as "500 tablets".
+    rf"(?:\s+(?!(?:{_ALL_UNITS})(?![A-Za-z]))[a-z-]+)?"
     rf"\s*(?P<unit>{_ALL_UNITS})(?![A-Za-z])",
     re.IGNORECASE,
 )
@@ -84,15 +90,17 @@ ONCE_TWICE_RE = re.compile(r"\b(once|twice)\b", re.IGNORECASE)
 # Warning concepts: (name, pattern to find it in the ORIGINAL, pattern accepted in the SIMPLIFIED)
 # ---------------------------------------------------------------------------
 
+# Patterns use \b (word boundary) wherever a short stem could hide inside another word:
+# "liver" is inside "delivery", "renal" inside "adrenaline", "fit" inside "benefit", "stop" inside "nonstop".
 CONCEPTS = [
     ("allergic reaction", r"allerg", r"allerg"),
     ("bleeding", r"bleed", r"bleed|blood"),
     ("heart attack", r"heart attack", r"heart attack"),
     ("stroke", r"\bstroke", r"\bstroke"),
-    ("heart disease", r"heart (?:disease|problem|failure)", r"heart"),
+    ("heart disease", r"heart (?:disease|problem|failure)", r"\bheart\b"),
     ("high blood pressure", r"high blood pressure|hypertension", r"blood pressure"),
-    ("liver", r"liver|hepat", r"liver"),
-    ("kidney", r"kidney|renal", r"kidney"),
+    ("liver", r"\bliver\b|hepat", r"\bliver\b"),
+    ("kidney", r"kidney|\brenal\b", r"kidney"),
     ("alcohol", r"alcohol|\bdrinks\b", r"alcohol|drink"),
     ("pregnancy", r"pregnan", r"pregnan"),
     ("breast-feeding", r"breast[- ]?feed|nursing", r"breast|nursing"),
@@ -101,12 +109,12 @@ CONCEPTS = [
     ("driving / machinery", r"driving|operating machinery|machinery", r"driv|machine"),
     ("asthma", r"asthma", r"asthma"),
     ("diabetes", r"diabet", r"diabet|blood sugar"),
-    ("seizures", r"seizure|convulsion", r"seizure|fit"),
-    ("suicidal thoughts", r"suicid", r"suicid|hurt(?:ing)? yourself|kill"),
+    ("seizures", r"seizure|convulsion", r"seizure|\bfits?\b"),
+    ("suicidal thoughts", r"suicid", r"suicid|hurt(?:ing)? yourself|\bkill"),
     ("surgery", r"surgery", r"surgery|operation"),
     ("MAOI interaction", r"\bMAOI|monoamine oxidase", r"MAOI|monoamine"),
     ("blood thinners", r"anticoagul|blood thinn|warfarin", r"blood thinn|warfarin|anticoagul"),
-    ("stop use", r"stop (?:use|using|taking)", r"stop"),
+    ("stop use", r"stop (?:use|using|taking)", r"\bstop"),
     ("keep away from children", r"out of (?:the )?reach of children", r"away from children|reach of children|where children"),
 ]
 
@@ -119,7 +127,12 @@ class Fact:
 
 
 def _normalise_number(raw: str) -> str:
+    """"two" -> "2", "one-half" -> "0.5", "two and one-half" -> "2.5", "200" -> "200"."""
     raw = raw.lower()
+    if raw.endswith("half") and raw != "half":
+        whole = raw.split(" and ")[0] if " and " in raw else "0"
+        value = float(WORD_NUMBERS.get(whole, whole)) + 0.5
+        return f"{value:g}"
     return WORD_NUMBERS.get(raw, raw)
 
 

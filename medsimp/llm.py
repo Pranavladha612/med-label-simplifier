@@ -71,8 +71,9 @@ def ask(prompt: str, system: str | None = None, model: str | None = None, use_ca
                 extra_body={
                     # OpenRouter-specific: fall back to other models if this one is busy...
                     "models": [model] + [m for m in config.OPENROUTER_FALLBACK_MODELS if m != model],
-                    # ...and don't include "thinking" text from reasoning models in the reply.
-                    "reasoning": {"exclude": True},
+                    # ...and control "thinking": off is ~100x faster for this task (see config.yaml).
+                    # If it's on, keep the thinking text out of the reply.
+                    "reasoning": {"exclude": True} if config.REASONING else {"enabled": False},
                 },
             )
             # OpenRouter sometimes answers "200 OK" but with an error inside and no reply

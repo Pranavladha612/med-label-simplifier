@@ -60,17 +60,31 @@ def nli(pairs: list[tuple[str, str]], batch_size: int = 32) -> list[dict[str, fl
     return results
 
 
-def split_units(text: str, max_words: int = 30) -> list[str]:
-    """Split text into small idea-sized pieces (sentences, bullet lines, or ~30-word slices)."""
+def split_units_marked(text: str, max_words: int = 30) -> list[tuple[str, bool]]:
+    """Split text into small idea-sized pieces: sentences, bullet lines, or ~30-word slices.
+
+    Each piece comes with a flag saying whether it comes from a CLEAN sentence (capital letter to
+    full stop) or from a run-on. openFDA's unpunctuated lists produce pieces like "feel faint have
+    bloody or black stools vomit blood ... or stroke:", which the NLI model often misreads as
+    contradicting perfectly correct sentences, so contradictions against them don't trigger retries.
+    """
     pieces = re.split(r"(?<=[.!?;:])\s+|\n+", text)
     units = []
     for piece in pieces:
-        words = piece.strip(" -•*").split()
+        piece = piece.strip(" -•*")
+        words = piece.split()
+        # A clean sentence starts with a capital and ends with a full stop (or ! ? ;). Pieces of flattened
+        # lists start lowercase ("feel faint have bloody or black stools...") or end at a list header ("...stroke:").
+        clean = piece[:1].isupper() and piece.endswith((".", "!", "?", ";"))
         for i in range(0, len(words), max_words):
             chunk = " ".join(words[i:i + max_words])
             if len(chunk.split()) >= 3:   # skip fragments like "Warnings"
-                units.append(chunk)
+                units.append((chunk, clean))
     return units
+
+
+def split_units(text: str, max_words: int = 30) -> list[str]:
+    return [unit for unit, _ in split_units_marked(text, max_words)]
 
 
 @dataclass
@@ -79,6 +93,13 @@ class Flag:
     kind: str           # "missing" or "contradiction"
     sentence: str       # the sentence that was flagged
     score: float        # entailment prob (for missing) or contradiction prob (for contradiction)
+    reliable: bool = True   # False when the evidence was a run-on slice, not a clean sentence
+
+    @property
+    def hard(self) -> bool:
+        """A rewrite sentence that a clean original sentence contradicts: the one signal reliable
+        enough to trigger a retry. Everything else is shown for human review."""
+        return self.kind == "contradiction" and self.direction == "unsupported" and self.reliable
 
 
 @dataclass
@@ -105,8 +126,8 @@ class NLIResult:
 
     @property
     def hard_contradictions(self) -> list[Flag]:
-        """Simplified sentences the original contradicts. These trigger a retry."""
-        return [f for f in self.contradictions if f.direction == "unsupported"]
+        """Simplified sentences that a clean original sentence contradicts. These trigger a retry."""
+        return [f for f in self.flags if f.hard]
 
     @staticmethod
     def combine(results: list["NLIResult"]) -> "NLIResult":
@@ -129,23 +150,25 @@ def _content_words(text: str) -> set[str]:
     return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in _STOPWORDS}
 
 
-def _most_similar(sentence: str, candidates: list[str], k: int) -> list[str]:
-    """The k candidates sharing the most content words with `sentence` (plus neighbours joined,
-    because one idea is sometimes split across two sentences)."""
-    options = candidates + [f"{a} {b}" for a, b in zip(candidates, candidates[1:])]
+def _most_similar(sentence: str, candidates: list[tuple[str, bool]], k: int) -> list[tuple[str, bool]]:
+    """The k (text, clean) candidates sharing the most content words with `sentence` (plus neighbours
+    joined, because one idea is sometimes split across two sentences; a join is clean if both parts are)."""
+    options = candidates + [(f"{a} {b}", ca and cb) for (a, ca), (b, cb) in zip(candidates, candidates[1:])]
     words = _content_words(sentence)
-    ranked = sorted(options, key=lambda c: len(words & _content_words(c)) / (len(words) or 1), reverse=True)
+    ranked = sorted(options, key=lambda c: len(words & _content_words(c[0])) / (len(words) or 1), reverse=True)
     return ranked[:k]
 
 
-def _check_direction(premises: list[str], hypotheses: list[str], direction: str) -> tuple[list[Flag], int]:
+def _check_direction(
+    premises: list[tuple[str, bool]], hypotheses: list[str], direction: str
+) -> tuple[list[Flag], int]:
     """Is each hypothesis supported by at least one of the (most similar) premises?"""
     if not hypotheses or not premises:
         return [], len(hypotheses)
 
     k = config.NLI_CANDIDATES
     candidates = [_most_similar(h, premises, k) for h in hypotheses]
-    pairs = [(p, h) for h, cands in zip(hypotheses, candidates) for p in cands]
+    pairs = [(p, h) for h, cands in zip(hypotheses, candidates) for p, _ in cands]
     scores = nli(pairs)
 
     flags, supported, i = [], 0, 0
@@ -153,20 +176,24 @@ def _check_direction(premises: list[str], hypotheses: list[str], direction: str)
         rows = scores[i:i + len(cands)]
         i += len(cands)
         best_entail = max(r["entailment"] for r in rows)
-        best_contra = max(r["contradiction"] for r in rows)
+        worst = max(range(len(rows)), key=lambda j: rows[j]["contradiction"])
+        best_contra = rows[worst]["contradiction"]
         if best_entail >= config.ENTAIL_THRESHOLD:
             supported += 1
         elif best_contra >= config.CONTRADICT_THRESHOLD:
-            flags.append(Flag(direction, "contradiction", hypothesis, best_contra))
+            premise_is_clean = cands[worst][1]
+            flags.append(Flag(direction, "contradiction", hypothesis, best_contra, reliable=premise_is_clean))
         else:
             flags.append(Flag(direction, "missing", hypothesis, best_entail))
     return flags, supported
 
 
 def check_meaning(original: str, simplified: str) -> NLIResult:
-    original_units, simplified_units = split_units(original), split_units(simplified)
-    lost_flags, original_supported = _check_direction(simplified_units, original_units, "lost")
-    unsupported_flags, simplified_supported = _check_direction(original_units, simplified_units, "unsupported")
+    original_units, simplified_units = split_units_marked(original), split_units_marked(simplified)
+    lost_flags, original_supported = _check_direction(
+        simplified_units, [u for u, _ in original_units], "lost")
+    unsupported_flags, simplified_supported = _check_direction(
+        original_units, [u for u, _ in simplified_units], "unsupported")
     return NLIResult(
         flags=unsupported_flags + lost_flags,
         original_units=len(original_units),
