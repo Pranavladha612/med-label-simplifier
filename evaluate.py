@@ -19,6 +19,7 @@ from dataclasses import asdict
 import pandas as pd
 
 from medsimp import config
+from medsimp.llm import DailyLimitReached
 from medsimp.pipeline import simplify_drug
 
 DEFAULT_DRUGS = [
@@ -59,14 +60,19 @@ def main():
     parser.add_argument("--no-nli", action="store_true")
     args = parser.parse_args()
 
-    rows, details = [], []
+    rows, details, done = [], [], []
     for drug in args.drugs:
         print(f"\n### {drug}")
         try:
             result = simplify_drug(drug, use_nli=not args.no_nli, on_progress=lambda m: print("  " + m))
+        except DailyLimitReached as error:
+            # No point trying the other drugs today. Replies so far are cached, so re-running continues here.
+            print(f"  STOPPED: {error}")
+            break
         except Exception as error:  # keep going so one bad drug doesn't stop the whole run
             print(f"  FAILED: {error}")
             continue
+        done.append(drug)
         for s in result.sections:
             rows.append(section_row(result, s))
             details.append({
@@ -79,11 +85,18 @@ def main():
                 "nli_flags": [asdict(f) for f in s.nli.flags] if s.nli else [],
                 "attempts": [a.text for a in s.attempts],
             })
+        save(rows, details)   # after every drug, so an interrupted run still leaves usable results
 
+    missing = [d for d in args.drugs if d not in done]
+    print(f"\nSaved {len(rows)} sections from {len(done)}/{len(args.drugs)} drugs to {config.RESULTS_DIR}")
+    if missing:
+        print(f"Not finished: {', '.join(missing)}. Run the same command again later to continue.")
+
+
+def save(rows: list[dict], details: list[dict]) -> None:
     config.RESULTS_DIR.mkdir(exist_ok=True)
     pd.DataFrame(rows).to_csv(config.RESULTS_DIR / "eval.csv", index=False)
     (config.RESULTS_DIR / "eval_details.json").write_text(json.dumps(details, indent=2), encoding="utf-8")
-    print(f"\nSaved {len(rows)} sections to {config.RESULTS_DIR}")
 
 
 if __name__ == "__main__":
