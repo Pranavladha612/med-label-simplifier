@@ -60,7 +60,7 @@ def nli(pairs: list[tuple[str, str]], batch_size: int = 32) -> list[dict[str, fl
     return results
 
 
-def split_units_marked(text: str, max_words: int = 30) -> list[tuple[str, bool]]:
+def split_units_marked(text: str, max_words: int = 30, split_all_colons: bool = False) -> list[tuple[str, bool]]:
     """Split text into small idea-sized pieces: sentences, bullet lines, or ~30-word slices.
 
     Each piece comes with a flag saying whether it comes from a CLEAN sentence (capital letter to
@@ -68,7 +68,12 @@ def split_units_marked(text: str, max_words: int = 30) -> list[tuple[str, bool]]
     bloody or black stools vomit blood ... or stroke:", which the NLI model often misreads as
     contradicting perfectly correct sentences, so contradictions against them don't trigger retries.
     """
-    pieces = re.split(r"(?<=[.!?;:])\s+|\n+", text)
+    # Split after . ! ? ; and at line breaks. In rewrites, split after a colon only when a new sentence
+    # follows, so "If you are under 2 years old: do not use." stays one idea instead of a bare "do not use."
+    # In original openFDA text, split at every colon: there, colons end list headers inside run-ons, and
+    # cutting there is what lets us recognise the pieces as fragments.
+    colon = r"(?<=:)\s+" if split_all_colons else r"(?<=:)\s+(?=[A-Z])"
+    pieces = re.split(rf"(?<=[.!?;])\s+|{colon}|\n+", text)
     units = []
     for piece in pieces:
         piece = piece.strip(" -•*")
@@ -189,7 +194,8 @@ def _check_direction(
 
 
 def check_meaning(original: str, simplified: str) -> NLIResult:
-    original_units, simplified_units = split_units_marked(original), split_units_marked(simplified)
+    original_units = split_units_marked(original, split_all_colons=True)
+    simplified_units = split_units_marked(simplified)
     lost_flags, original_supported = _check_direction(
         simplified_units, [u for u, _ in original_units], "lost")
     unsupported_flags, simplified_supported = _check_direction(

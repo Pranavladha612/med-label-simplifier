@@ -63,7 +63,7 @@ med-label-simplifier/
 │   ├── llm.py               ← OpenRouter client: fallbacks, retries, caching, error handling
 │   ├── fetch.py  facts.py  simplify.py  verify.py  readability.py  pipeline.py  render.py
 ├── notebooks/evaluation.ipynb
-└── tests/                   ← 30 tests (pytest)
+└── tests/                   ← 33 tests (pytest)
 ```
 
 ## How the LLM is used
@@ -166,6 +166,32 @@ pytest
 one huge sentence, which inflates their Flesch-Kincaid grade. Hard-words % doesn't depend on
 sentences and is the fairer before/after comparison.
 
+## Results
+
+`python evaluate.py --quick`: 8 drugs (ibuprofen, acetaminophen, naproxen, aspirin, diphenhydramine,
+loratadine, cetirizine, loperamide), 21 label sections (directions, warnings, stop use, boxed warning),
+free OpenRouter models. Charts and per-section details are in
+[notebooks/evaluation.ipynb](notebooks/evaluation.ipynb).
+
+| Metric | Result |
+|---|---|
+| Critical facts kept (doses, times, ages, warnings) | **176 / 176 (100%)**, all on the first try |
+| Invented numbers | **0** |
+| Sections passing every hard check | **20 / 21** |
+| Sections needing a retry | 1 / 21 |
+| Hard words | 20.3% → **13.2%** |
+| Flesch-Kincaid grade (original inflated, see Metrics) | 15.0 → **5.9** |
+| NLI faithfulness (rewrite sentences supported by the label) | 88% |
+
+The one section that didn't pass (naproxen directions) was a real catch: the model worked out on its own
+that 750 mg is "one and one-half tablets", which the label doesn't state for that dose. It was correctly
+left for pharmacist review.
+
+**Caveat:** the checker's own bugs (design notes 5–9) were found and fixed while looking at these same drugs,
+so they are partly development data. The other 4 default drugs (omeprazole, famotidine, dextromethorphan,
+guaifenesin) were never inspected and are a fair held-out test:
+`python evaluate.py --drugs omeprazole famotidine dextromethorphan guaifenesin --sections dosage_and_administration warnings stop_use`.
+
 ## Design notes and early findings
 
 These came up while building the project and are worth discussing in a write-up:
@@ -200,6 +226,12 @@ These came up while building the project and are worth discussing in a write-up:
    "500 tablets" and the label's "one-half tablet" as a range, which caused false "invented" alarms.
    Both are fixed and tested. The one remaining flag was real: the model worked out on its own that
    750 mg is "one and one-half tablets", a claim the label doesn't make for that dose, so it's left for review.
+9. **The evaluation found two more checker false alarms, both fixed.** (a) Loperamide's correct
+   "If you are under 2 years old: do not use." was split at the colon, and the bare "do not use." was judged
+   to contradict "Do not use any other dosing device." Rewrites are now only split at a colon when a new
+   sentence follows. (b) Diphenhydramine's "sedation" was correctly rewritten as "sleepiness", but only
+   "sleepy" was accepted, so the checker asked for a drowsiness warning and the retry added a generic one.
+   Each fix removed a needless retry; with both, first-try fact recall went from 99.4% to 100%.
 
 ## Known limitations
 

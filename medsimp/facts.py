@@ -105,7 +105,8 @@ CONCEPTS = [
     ("pregnancy", r"pregnan", r"pregnan"),
     ("breast-feeding", r"breast[- ]?feed|nursing", r"breast|nursing"),
     ("overdose", r"overdose", r"overdose|too much"),
-    ("drowsiness", r"drows|sleepy|sedat", r"drows|sleepy|tired"),
+    # "sleepiness"/"sleepy" count, but not "sleep" alone: "trouble sleeping" means the opposite.
+    ("drowsiness", r"drows|sleepy|sedat", r"drows|sleep(?:y|iness)|tired"),
     ("driving / machinery", r"driving|operating machinery|machinery", r"driv|machine"),
     ("asthma", r"asthma", r"asthma"),
     ("diabetes", r"diabet", r"diabet|blood sugar"),

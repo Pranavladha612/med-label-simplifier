@@ -82,6 +82,14 @@ def test_concept_words_are_matched_as_whole_words():
     assert "kidney" in keys(extract_facts("renal impairment"))
 
 
+def test_plain_words_for_drowsiness_are_accepted():
+    # Real false "missing" on diphenhydramine: "sedation" was correctly rewritten as "sleepiness".
+    original = "Antihistamines are more likely to cause dizziness, sedation and hypotension in elderly patients."
+    assert "drowsiness" not in keys(compare_facts(original, "may cause dizziness, sleepiness, or low blood pressure").missing)
+    # ...but "trouble sleeping" means the opposite and must not count.
+    assert "drowsiness" in keys(compare_facts(original, "may cause dizziness or trouble sleeping").missing)
+
+
 def test_simplified_side_ignores_look_alike_words():
     original = "ask a doctor if you have heart disease, seizures or liver problems, or suicidal thoughts. stop use if"
     simplified = "It may help with heartburn. The benefit is nonstop. Use a painkiller. Take it after delivery."
