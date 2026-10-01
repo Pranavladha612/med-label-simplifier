@@ -13,7 +13,7 @@ ORIGINAL = (
 def test_split_units_skips_tiny_headings_and_splits_long_runs():
     units = split_units("Warnings\n" + " ".join(["word"] * 70))
     assert "Warnings" not in units
-    assert all(len(u.split()) <= 30 for u in units)
+    assert all(len(u.split()) <= 45 for u in units)
 
 
 def test_retrieval_finds_the_matching_sentence():
@@ -65,6 +65,15 @@ def test_only_rewrite_side_contradictions_on_clean_evidence_are_hard():
     assert not Flag("unsupported", "contradiction", "x", 0.99, reliable=False).hard   # run-on evidence
     assert not Flag("lost", "contradiction", "x", 0.99, reliable=True).hard           # original-side
     assert not Flag("unsupported", "missing", "x", 0.1).hard
+
+
+def test_slices_of_a_long_run_on_are_not_clean():
+    # Real false contradiction on dextromethorphan: a 50+ word run-on starts with a capital and ends
+    # with a full stop, but its slices are not sentences.
+    run_on = ("Stop use and ask a doctor if nervousness, dizziness, or sleeplessness occur pain, cough, or nasal "
+              "congestion gets worse or lasts more than 7 days fever gets worse or lasts more than 3 days redness "
+              "or swelling is present new symptoms occur cough comes back or occurs with a rash or headache that lasts.")
+    assert all(clean is False for _, clean in split_units_marked(run_on, split_all_colons=True))
 
 
 def test_run_on_pieces_are_not_clean_sentences():

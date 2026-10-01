@@ -60,8 +60,8 @@ def nli(pairs: list[tuple[str, str]], batch_size: int = 32) -> list[dict[str, fl
     return results
 
 
-def split_units_marked(text: str, max_words: int = 30, split_all_colons: bool = False) -> list[tuple[str, bool]]:
-    """Split text into small idea-sized pieces: sentences, bullet lines, or ~30-word slices.
+def split_units_marked(text: str, max_words: int = 45, split_all_colons: bool = False) -> list[tuple[str, bool]]:
+    """Split text into small idea-sized pieces: sentences, bullet lines, or ~45-word slices.
 
     Each piece comes with a flag saying whether it comes from a CLEAN sentence (capital letter to
     full stop) or from a run-on. openFDA's unpunctuated lists produce pieces like "feel faint have
@@ -80,7 +80,8 @@ def split_units_marked(text: str, max_words: int = 30, split_all_colons: bool = 
         words = piece.split()
         # A clean sentence starts with a capital and ends with a full stop (or ! ? ;). Pieces of flattened
         # lists start lowercase ("feel faint have bloody or black stools...") or end at a list header ("...stroke:").
-        clean = piece[:1].isupper() and piece.endswith((".", "!", "?", ";"))
+        # A piece too long for one unit gets sliced, and a slice is never a sentence.
+        clean = len(words) <= max_words and piece[:1].isupper() and piece.endswith((".", "!", "?", ";"))
         for i in range(0, len(words), max_words):
             chunk = " ".join(words[i:i + max_words])
             if len(chunk.split()) >= 3:   # skip fragments like "Warnings"
@@ -88,7 +89,7 @@ def split_units_marked(text: str, max_words: int = 30, split_all_colons: bool = 
     return units
 
 
-def split_units(text: str, max_words: int = 30) -> list[str]:
+def split_units(text: str, max_words: int = 45) -> list[str]:
     return [unit for unit, _ in split_units_marked(text, max_words)]
 
 

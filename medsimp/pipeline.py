@@ -24,6 +24,7 @@ class Attempt:
     fact_check: FactCheck
     nli: NLIResult | None
     problems: list[str]
+    chunk: int = 0              # which chunk of the section this attempt rewrote
 
 
 @dataclass
@@ -41,6 +42,14 @@ class SectionResult:
     @property
     def retries(self) -> int:
         return len(self.attempts) - len(split_into_chunks(self.original))
+
+    @property
+    def first_try_text(self) -> str:
+        """The whole first draft: each chunk's first attempt, before any fix-and-retry."""
+        firsts = {}
+        for attempt in self.attempts:
+            firsts.setdefault(attempt.chunk, attempt.text)
+        return "\n".join(firsts[i] for i in sorted(firsts))
 
     @property
     def passed(self) -> bool:
@@ -85,17 +94,17 @@ def simplify_section(name: str, original: str, use_nli: bool = True) -> SectionR
     section_label = fetch.pretty_section_name(name)
     final_pieces, final_nli, attempts = [], [], []
 
-    for chunk in split_into_chunks(original):
+    for i, chunk in enumerate(split_into_chunks(original)):
         text = simplify(chunk, section_label)
         fact_check, nli_result, problems = _verify(chunk, text, use_nli)
-        attempts.append(Attempt(text, fact_check, nli_result, problems))
+        attempts.append(Attempt(text, fact_check, nli_result, problems, chunk=i))
 
         for _ in range(config.MAX_RETRIES):
             if not problems:
                 break
             text = fix(chunk, text, problems)
             fact_check, nli_result, problems = _verify(chunk, text, use_nli)
-            attempts.append(Attempt(text, fact_check, nli_result, problems))
+            attempts.append(Attempt(text, fact_check, nli_result, problems, chunk=i))
 
         final_pieces.append(text)
         if nli_result:

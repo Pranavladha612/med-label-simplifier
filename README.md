@@ -63,7 +63,7 @@ med-label-simplifier/
 │   ├── llm.py               ← OpenRouter client: fallbacks, retries, caching, error handling
 │   ├── fetch.py  facts.py  simplify.py  verify.py  readability.py  pipeline.py  render.py
 ├── notebooks/evaluation.ipynb
-└── tests/                   ← 33 tests (pytest)
+└── tests/                   ← 34 tests (pytest)
 ```
 
 ## How the LLM is used
@@ -168,29 +168,38 @@ sentences and is the fairer before/after comparison.
 
 ## Results
 
-`python evaluate.py --quick`: 8 drugs (ibuprofen, acetaminophen, naproxen, aspirin, diphenhydramine,
-loratadine, cetirizine, loperamide), 21 label sections (directions, warnings, stop use, boxed warning),
-free OpenRouter models. Charts and per-section details are in
+Two runs on free OpenRouter models, over the sections that hold most doses and warnings (directions,
+warnings, stop use, boxed warning). Charts and per-section details for the development set are in
 [notebooks/evaluation.ipynb](notebooks/evaluation.ipynb).
 
-| Metric | Result |
-|---|---|
-| Critical facts kept (doses, times, ages, warnings) | **176 / 176 (100%)**, all on the first try |
-| Invented numbers | **0** |
-| Sections passing every hard check | **20 / 21** |
-| Sections needing a retry | 1 / 21 |
-| Hard words | 20.3% → **13.2%** |
-| Flesch-Kincaid grade (original inflated, see Metrics) | 15.0 → **5.9** |
-| NLI faithfulness (rewrite sentences supported by the label) | 88% |
+- **Development set** (`python evaluate.py --quick`): ibuprofen, acetaminophen, naproxen, aspirin,
+  diphenhydramine, loratadine, cetirizine, loperamide. The checker's own bugs (design notes 5–9) were
+  found and fixed while looking at these drugs.
+- **Unseen set**: omeprazole, famotidine, dextromethorphan, guaifenesin, never inspected before the run:
+  `python evaluate.py --drugs omeprazole famotidine dextromethorphan guaifenesin --sections dosage_and_administration warnings stop_use boxed_warning --out heldout`
 
-The one section that didn't pass (naproxen directions) was a real catch: the model worked out on its own
-that 750 mg is "one and one-half tablets", which the label doesn't state for that dose. It was correctly
-left for pharmacist review.
+| Metric | Development (8 drugs, 21 sections) | **Unseen (4 drugs, 12 sections)** |
+|---|---|---|
+| Critical facts kept (doses, times, ages, warnings) | **176 / 176 (100%)** | **71 / 72 (98.6%)** |
+| Invented numbers: first draft → final | 1 → **0** | 0 → **0** |
+| Sections passing every hard check | 20 / 21 | 11 / 12 |
+| Sections needing a retry | 1 / 21 | 1 / 12 |
+| Hard words | 20.3% → **13.2%** | 19.9% → **11.9%** |
+| Flesch-Kincaid grade (original inflated, see Metrics) | 15.0 → **5.9** | 11.5 → **5.7** |
+| NLI faithfulness (rewrite sentences supported by the label) | 85% | 93% |
 
-**Caveat:** the checker's own bugs (design notes 5–9) were found and fixed while looking at these same drugs,
-so they are partly development data. The other 4 default drugs (omeprazole, famotidine, dextromethorphan,
-guaifenesin) were never inspected and are a fair held-out test:
-`python evaluate.py --drugs omeprazole famotidine dextromethorphan guaifenesin --sections dosage_and_administration warnings stop_use`.
+The unseen drugs score about as well as the development drugs, which suggests the checker fixes generalise
+rather than being tailored to the drugs they were found on.
+
+One more checker fix (design note 10) was made *after* the first unseen run, so the unseen column is from a re-run. The first run was nearly identical: 71/72 facts kept, 0 invented numbers, 11/12 sections passing, 2 retried instead of 1.
+
+**The two sections that didn't pass:**
+- *Naproxen directions (development):* a real catch. The model worked out on its own that 750 mg is
+  "one and one-half tablets", which the label doesn't state for that dose, so it was left for pharmacist
+  review. The retry loop also removed a number the first draft had invented.
+- *Dextromethorphan warnings (unseen):* the rewrite kept the warning itself ("Acetaminophen may cause severe
+  skin reactions… stop using… get medical help") but dropped the heading "Allergy alert", and two retries
+  didn't restore it. A real but minor omission, reported as missing because the checker is deliberately strict.
 
 ## Design notes and early findings
 
@@ -232,6 +241,12 @@ These came up while building the project and are worth discussing in a write-up:
    sentence follows. (b) Diphenhydramine's "sedation" was correctly rewritten as "sleepiness", but only
    "sleepy" was accepted, so the checker asked for a drowsiness warning and the retry added a generic one.
    Each fix removed a needless retry; with both, first-try fact recall went from 99.4% to 100%.
+10. **The unseen-drug run found one more false alarm and a metric bug.** (a) A correct dextromethorphan
+    sentence was "contradicted" by a slice of a 50-word run-on that happened to start with a capital and
+    end with a full stop. Slices of long text are now never treated as clean sentences (units are 45
+    words, so genuine long sentences stay whole). (b) For sections split into chunks, "first try" only
+    measured the first chunk. It now measures the whole first draft, which revealed that naproxen's first
+    draft had invented a number that the retry loop then removed.
 
 ## Known limitations
 
