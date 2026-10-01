@@ -14,6 +14,18 @@ Rewriting text in simpler words is easy for an LLM. The hard part, and the point
 is **verification**: making sure every dose, time limit, age limit and warning survives the
 rewrite, and that the model didn't invent anything.
 
+## Project requirements
+
+| Requirement | Where |
+|---|---|
+| NLP project integrating an LLM through API calls | [`medsimp/llm.py`](medsimp/llm.py): OpenRouter API (OpenAI format), called from [`medsimp/simplify.py`](medsimp/simplify.py) |
+| LLM functionality implemented meaningfully | The LLM simplifies each label section and repairs its own rewrite when the fact and meaning checks fail ([`medsimp/pipeline.py`](medsimp/pipeline.py)) |
+| Project source code | [`medsimp/`](medsimp), [`app.py`](app.py), [`cli.py`](cli.py), [`evaluate.py`](evaluate.py) |
+| **Prompt file** | [`prompts/prompts.yaml`](prompts/prompts.yaml): system, simplify and fix prompts, with the reasoning behind each technique |
+| **Configuration file** | [`config.yaml`](config.yaml): model, fallbacks, temperature, retries, thresholds, sections, paths. The API key goes in `.env` ([`.env.example`](.env.example)) |
+| Other files needed to run it | [`requirements.txt`](requirements.txt), [Setup](#setup) and [Usage](#usage) below, [`tests/`](tests) (34 tests), [Colab demo](colab_demo.ipynb) |
+| Evidence it works | [Results](#results): 176/176 and 71/72 critical facts kept on development and unseen drugs |
+
 ## How it works
 
 ```
@@ -101,10 +113,12 @@ gives access to many models with one key.
 | Critical facts kept | 34/34 and 16/16 | 34/34 and 16/16 |
 | Invented numbers | 0 | 0 |
 
-Simpler text with no loss of safety-critical facts. This is two drugs; `python evaluate.py` runs the
-full 12-drug comparison.
+Simpler text with no loss of safety-critical facts. This compares two drugs; the [Results](#results)
+section measures the current prompt across 12.
 
-## Setup (Windows)
+## Setup
+
+Python 3.10 or newer. On **Windows**:
 
 ```bash
 python -m venv .venv
@@ -112,6 +126,16 @@ python -m venv .venv
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt
 copy .env.example .env
+```
+
+On **macOS / Linux**:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -r requirements.txt
+cp .env.example .env
 ```
 
 Then open `.env` and paste your OpenRouter key (from https://openrouter.ai/keys).

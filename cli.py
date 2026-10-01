@@ -25,7 +25,10 @@ def main():
 
     sys.stdout.reconfigure(encoding="utf-8")  # so Windows terminals don't choke on symbols
     print(f"\n{DISCLAIMER}\n")
-    result = simplify_drug(args.drug, use_nli=not args.no_nli, sections=args.sections, on_progress=print)
+    try:
+        result = simplify_drug(args.drug, use_nli=not args.no_nli, sections=args.sections, on_progress=print)
+    except (LookupError, RuntimeError) as error:   # unknown drug, missing API key, daily limit, API down
+        sys.exit(f"Error: {error}")
 
     print(f"\n=== {result.display_name}  (model: {result.model}) ===")
     for s in result.sections:
