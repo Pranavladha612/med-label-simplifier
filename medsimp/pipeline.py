@@ -21,6 +21,7 @@ from .verify import NLIResult, check_meaning, start_warm_up
 
 @dataclass
 class Attempt:
+    """One LLM output (first try or a fix) for one chunk, with its check results."""
     text: str
     fact_check: FactCheck
     nli: NLIResult | None
@@ -30,6 +31,7 @@ class Attempt:
 
 @dataclass
 class SectionResult:
+    """Everything about one simplified label section."""
     name: str
     original: str
     simplified: str
@@ -42,6 +44,7 @@ class SectionResult:
 
     @property
     def retries(self) -> int:
+        """Number of fix-it calls made (attempts beyond the first try of each chunk)."""
         return len(self.attempts) - len(split_into_chunks(self.original))
 
     @property
@@ -59,11 +62,13 @@ class SectionResult:
 
     @property
     def needs_review(self) -> bool:
+        """True if hard problems remain or the meaning check left flags for a human to look at."""
         return not self.passed or bool(self.nli and self.nli.flags)
 
 
 @dataclass
 class DrugResult:
+    """Everything about one drug: its simplified sections and which models answered."""
     drug: str
     display_name: str
     model: str
@@ -85,6 +90,7 @@ def find_problems(fact_check: FactCheck, nli_result: NLIResult | None) -> list[s
 
 
 def _verify(original: str, simplified: str, use_nli: bool) -> tuple[FactCheck, NLIResult | None, list[str]]:
+    """Run both checks on a rewrite and turn their findings into a list of problems."""
     fact_check = compare_facts(original, simplified)
     nli_result = check_meaning(original, simplified) if use_nli else None
     return fact_check, nli_result, find_problems(fact_check, nli_result)
@@ -138,6 +144,7 @@ def simplify_drug(
     sections: list[str] | None = None,
     on_progress: Callable[[str], None] | None = None,
 ) -> DrugResult:
+    """Fetch a drug's label and simplify its sections in parallel, keeping the label's order."""
     if use_nli:
         start_warm_up()   # load the NLI model in the background while the label downloads and the LLM writes
     label = fetch.fetch_label(drug)

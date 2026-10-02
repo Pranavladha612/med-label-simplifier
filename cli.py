@@ -17,6 +17,7 @@ DISCLAIMER = "NOT MEDICAL ADVICE. Research prototype. Simplified text must be re
 
 
 def main():
+    """Parse the command line, simplify one drug and print a report."""
     parser = argparse.ArgumentParser(description="Simplify a drug label and verify nothing important was lost.")
     parser.add_argument("drug", help="generic or brand name, e.g. ibuprofen")
     parser.add_argument("--sections", nargs="*", help="only these openFDA sections, e.g. warnings stop_use")

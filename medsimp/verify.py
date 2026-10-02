@@ -56,6 +56,7 @@ def _model_classes(local_only: bool):
 
 
 def _load_model():
+    """Load the NLI model and tokenizer once (runs only on the model thread)."""
     global _tokenizer, _model
     if _model is None:
         # Use the downloaded copy directly; otherwise every start first asks the Hugging Face servers
@@ -147,11 +148,13 @@ def split_units_marked(text: str, max_words: int = 45, split_all_colons: bool = 
 
 
 def split_units(text: str, max_words: int = 45) -> list[str]:
+    """Like split_units_marked, without the clean-sentence flags."""
     return [unit for unit, _ in split_units_marked(text, max_words)]
 
 
 @dataclass
 class Flag:
+    """One finding of the meaning check, shown to the user or used to trigger a retry."""
     direction: str      # "lost" (original idea not found) or "unsupported" (simplified idea not in original)
     kind: str           # "missing" or "contradiction"
     sentence: str       # the sentence that was flagged
@@ -167,6 +170,7 @@ class Flag:
 
 @dataclass
 class NLIResult:
+    """Meaning-check result for one chunk (or, via combine, a whole section)."""
     flags: list[Flag] = field(default_factory=list)
     original_units: int = 0
     original_supported: int = 0
@@ -185,6 +189,7 @@ class NLIResult:
 
     @property
     def contradictions(self) -> list[Flag]:
+        """All contradiction flags, in either direction."""
         return [f for f in self.flags if f.kind == "contradiction"]
 
     @property
@@ -210,6 +215,7 @@ _STOPWORDS = set("a an the and or of to in on for if you your is are be it this 
 
 
 def _content_words(text: str) -> set[str]:
+    """Lower-cased words of the text, without common stop-words."""
     return {w for w in re.findall(r"[a-z0-9]+", text.lower()) if w not in _STOPWORDS}
 
 
@@ -263,6 +269,7 @@ def _check_direction(
 
 
 def check_meaning(original: str, simplified: str) -> NLIResult:
+    """Run the meaning check in both directions for one original chunk and its rewrite."""
     original_units = split_units_marked(original, split_all_colons=True)
     simplified_units = split_units_marked(simplified)
     lost_flags, original_supported = _check_direction(

@@ -40,6 +40,7 @@ def _best_match(labels: list[dict], name: str) -> dict:
     name = name.lower()
 
     def names(label):
+        """All brand and generic names on a label, lower-cased."""
         openfda = label.get("openfda", {})
         return [n.lower() for n in openfda.get("brand_name", []) + openfda.get("generic_name", [])]
 
@@ -63,6 +64,7 @@ def get_sections(label: dict) -> dict[str, str]:
 
 
 def drug_display_name(label: dict) -> str:
+    """A readable name for the label, e.g. "Advil (ibuprofen)"."""
     openfda = label.get("openfda", {})
     brand = (openfda.get("brand_name") or [""])[0]
     generic = (openfda.get("generic_name") or [""])[0]

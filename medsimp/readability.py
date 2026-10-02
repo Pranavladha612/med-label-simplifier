@@ -22,6 +22,7 @@ def _end_lines_as_sentences(text: str) -> str:
 
 
 def readability(text: str) -> dict[str, float]:
+    """Flesch-Kincaid grade, % hard words, syllables per word and word count of a text."""
     text = _end_lines_as_sentences(text)
     words = textstat.lexicon_count(text) or 1
     return {

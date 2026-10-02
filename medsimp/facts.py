@@ -122,6 +122,7 @@ CONCEPTS = [
 
 @dataclass(frozen=True)
 class Fact:
+    """One critical fact found in label text."""
     kind: str   # "quantity" or "concept"
     key: str    # canonical form used for matching, e.g. "4-6 hour" or "allergic reaction"
     text: str   # the exact words found in the text, for display
@@ -138,6 +139,7 @@ def _normalise_number(raw: str) -> str:
 
 
 def _canonical_unit(raw: str) -> str:
+    """Map a unit spelling to its standard name, e.g. "caplets" -> "tablet"."""
     for pattern, canonical in _UNIT_LOOKUP:
         if pattern.match(raw):
             return canonical
@@ -145,6 +147,7 @@ def _canonical_unit(raw: str) -> str:
 
 
 def extract_quantities(text: str) -> list[Fact]:
+    """Every number-plus-unit in the text (doses, times, ages, frequencies) as normalised facts."""
     facts = []
     for m in QUANTITY_RE.finditer(text):
         low = _normalise_number(m.group("low"))
@@ -161,6 +164,7 @@ def extract_quantities(text: str) -> list[Fact]:
 
 
 def extract_concepts(text: str) -> list[Fact]:
+    """Every warning concept (allergy, bleeding, pregnancy...) mentioned in ORIGINAL label text."""
     facts = []
     for name, original_pattern, _ in CONCEPTS:
         m = re.search(original_pattern, text, re.IGNORECASE)
@@ -189,17 +193,20 @@ def concept_present(concept_name: str, simplified_text: str) -> bool:
 
 @dataclass
 class FactCheck:
+    """Which facts from the original survived the rewrite, which were lost, and which numbers were invented."""
     kept: list[Fact]            # facts from the original that survived
     missing: list[Fact]         # facts from the original that were lost  <- dangerous
     invented: list[Fact]        # quantities in the simplified text that weren't in the original  <- dangerous
 
     @property
     def recall(self) -> float:
+        """Share of the original's facts kept in the rewrite (1.0 if there were none)."""
         total = len(self.kept) + len(self.missing)
         return 1.0 if total == 0 else len(self.kept) / total
 
 
 def compare_facts(original: str, simplified: str) -> FactCheck:
+    """Check a rewrite against its original: kept, missing and invented facts."""
     original_facts = extract_facts(original)
     simplified_quantity_keys = {f.key for f in extract_quantities(simplified)}
     original_quantity_keys = {f.key for f in original_facts if f.kind == "quantity"}

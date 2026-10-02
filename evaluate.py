@@ -37,6 +37,7 @@ QUICK_SECTIONS = ["dosage_and_administration", "warnings", "stop_use", "boxed_wa
 
 
 def section_row(drug_result, s) -> dict:
+    """One row of eval.csv: all metrics for one section."""
     total_facts = len(s.fact_check.kept) + len(s.fact_check.missing)
     first_try = compare_facts(s.original, s.first_try_text)   # whole first draft, before any retry
     return {
@@ -65,6 +66,7 @@ def section_row(drug_result, s) -> dict:
 
 
 def main():
+    """Run the pipeline on a set of drugs and save the metrics after each drug."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--drugs", nargs="*", help="drug names (default: 12 common drugs)")
     parser.add_argument("--sections", nargs="*", help="only these openFDA sections (default: all)")
@@ -110,6 +112,7 @@ def main():
 
 
 def save(rows: list[dict], details: list[dict], name: str = "eval") -> None:
+    """Write eval.csv and the details JSON (named after --out)."""
     config.RESULTS_DIR.mkdir(exist_ok=True)
     pd.DataFrame(rows).to_csv(config.RESULTS_DIR / f"{name}.csv", index=False)
     (config.RESULTS_DIR / f"{name}_details.json").write_text(json.dumps(details, indent=2), encoding="utf-8")

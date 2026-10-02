@@ -23,6 +23,7 @@ DAILY_LIMIT_MESSAGE = (
 
 
 class DailyLimitReached(RuntimeError):
+    """The free OpenRouter quota for today is used up; retrying won't help."""
     pass
 
 
@@ -48,6 +49,7 @@ def ask(prompt: str, system: str | None = None, model: str | None = None, use_ca
 # ---------------------------------------------------------------- talking to OpenRouter
 
 def _get_client() -> OpenAI:
+    """Create the OpenRouter client once (fails clearly if no API key is configured)."""
     global _client
     if _client is None:
         if not config.OPENROUTER_API_KEY or config.OPENROUTER_API_KEY.startswith("sk-or-..."):
@@ -128,6 +130,7 @@ def _error_message(response) -> str:
 
 
 def _is_daily_limit(message: str) -> bool:
+    """True if an error message says the daily free-request limit was hit."""
     return "per-day" in message or "per day" in message
 
 
@@ -140,6 +143,7 @@ def _cache_file(model: str, system: str | None, prompt: str) -> Path:
 
 
 def _write_cache(path: Path, model: str, answered_by: str, system: str | None, prompt: str, reply: str) -> None:
+    """Save one reply (with the prompts that produced it) as a JSON file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     record = {"model": model, "answered_by": answered_by, "system": system, "prompt": prompt, "reply": reply}
     path.write_text(json.dumps(record, indent=2), encoding="utf-8")

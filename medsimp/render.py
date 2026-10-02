@@ -60,6 +60,7 @@ def flag_label(flag) -> tuple[str, str]:
 
 
 def section_html(s) -> str:
+    """HTML for one section: original and rewrite side by side, metrics and flags."""
     original_spans, simplified_spans = fact_spans(s)
     b, a = s.readability_before, s.readability_after
     total = len(s.fact_check.kept) + len(s.fact_check.missing)

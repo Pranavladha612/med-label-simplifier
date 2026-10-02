@@ -25,15 +25,18 @@ def load_prompts() -> dict:
 
 
 def _system_prompt() -> str:
+    """The system prompt from prompts.yaml with the target reading grade filled in."""
     return load_prompts()["system"].format(grade=config.TARGET_GRADE).strip()
 
 
 def simplify(text: str, section: str) -> str:
+    """First rewrite of one chunk of a label section, at the target reading level."""
     user = load_prompts()["simplify"].format(section=section, text=text).strip()
     return clean_reply(llm.ask(user, system=_system_prompt()))
 
 
 def fix(original: str, previous: str, problems: list[str]) -> str:
+    """Rewrite again, telling the model exactly which problems the checks found."""
     user = load_prompts()["fix"].format(
         original=original,
         previous=previous,
