@@ -8,6 +8,7 @@ Retry policy: we regenerate when the checks find a HARD problem:
 are shown for human review but don't trigger a retry on their own.
 """
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -15,7 +16,7 @@ from . import config, fetch, llm
 from .facts import FactCheck, compare_facts
 from .readability import readability
 from .simplify import fix, simplify, split_into_chunks
-from .verify import NLIResult, check_meaning
+from .verify import NLIResult, check_meaning, start_warm_up
 
 
 @dataclass
@@ -137,6 +138,8 @@ def simplify_drug(
     sections: list[str] | None = None,
     on_progress: Callable[[str], None] | None = None,
 ) -> DrugResult:
+    if use_nli:
+        start_warm_up()   # load the NLI model in the background while the label downloads and the LLM writes
     label = fetch.fetch_label(drug)
     available = fetch.get_sections(label)
     if sections:
@@ -144,9 +147,25 @@ def simplify_drug(
 
     result = DrugResult(drug=drug, display_name=fetch.drug_display_name(label), model=config.OPENROUTER_MODEL)
     llm.models_used.clear()
-    for name, text in available.items():
-        if on_progress:
-            on_progress(f"Simplifying {fetch.pretty_section_name(name)}...")
-        result.sections.append(simplify_section(name, text, use_nli=use_nli))
+    names = [fetch.pretty_section_name(name) for name in available]
+    if on_progress and names:
+        on_progress(f"Simplifying {len(names)} sections in parallel: {', '.join(names)}...")
+
+    # Sections are independent, so they run in parallel threads: while one waits for the LLM, another
+    # can use the NLI model. Progress is reported from this (main) thread, which is what Streamlit needs.
+    workers = max(1, min(config.PARALLEL_SECTIONS, len(available)))
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(simplify_section, name, text, use_nli): name for name, text in available.items()}
+        done = {}
+        try:
+            for future in as_completed(futures):
+                name = futures[future]
+                done[name] = future.result()   # re-raises errors such as DailyLimitReached
+                if on_progress:
+                    on_progress(f"Finished {fetch.pretty_section_name(name)} ({len(done)}/{len(futures)})")
+        except BaseException:
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
+    result.sections = [done[name] for name in available]   # keep the label's section order
     result.model = ", ".join(sorted(llm.models_used)) or config.OPENROUTER_MODEL
     return result

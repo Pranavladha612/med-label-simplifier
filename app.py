@@ -2,13 +2,18 @@
 
 import streamlit as st
 
-from medsimp import config
+from medsimp import config, verify
 from medsimp.fetch import pretty_section_name
 from medsimp.pipeline import simplify_drug
 from medsimp.render import CSS, LEGEND, fact_spans, flag_label, highlight
 
 st.set_page_config(page_title="Plain-Language Drug Labels", page_icon="💊", layout="wide")
 st.markdown(CSS, unsafe_allow_html=True)
+
+
+# Start loading the meaning-check model as soon as the page opens, so it's ready by the time someone
+# clicks "Simplify label" instead of adding its start-up time to the wait. Runs once per server.
+verify.start_warm_up()
 
 st.title("💊 Plain-Language Drug Labels")
 st.caption("Rewrites drug labels at a ~5th-grade reading level, then checks that no dose, time, or warning was lost.")

@@ -23,7 +23,7 @@ rewrite, and that the model didn't invent anything.
 | Project source code | [`medsimp/`](medsimp), [`app.py`](app.py), [`cli.py`](cli.py), [`evaluate.py`](evaluate.py) |
 | **Prompt file** | [`prompts/prompts.yaml`](prompts/prompts.yaml): system, simplify and fix prompts, with the reasoning behind each technique |
 | **Configuration file** | [`config.yaml`](config.yaml): model, fallbacks, temperature, retries, thresholds, sections, paths. The API key goes in `.env` ([`.env.example`](.env.example)) |
-| Other files needed to run it | [`requirements.txt`](requirements.txt), [Setup](#setup) and [Usage](#usage) below, [`tests/`](tests) (34 tests), [Colab demo](colab_demo.ipynb) |
+| Other files needed to run it | [`requirements.txt`](requirements.txt), [Setup](#setup) and [Usage](#usage) below, [`tests/`](tests) (37 tests), [Colab demo](colab_demo.ipynb) |
 | Evidence it works | [Results](#results): 176/176 and 71/72 critical facts kept on development and unseen drugs |
 
 ## How it works
@@ -75,7 +75,7 @@ med-label-simplifier/
 │   ├── llm.py               ← OpenRouter client: fallbacks, retries, caching, error handling
 │   ├── fetch.py  facts.py  simplify.py  verify.py  readability.py  pipeline.py  render.py
 ├── notebooks/evaluation.ipynb
-└── tests/                   ← 34 tests (pytest)
+└── tests/                   ← 37 tests (pytest)
 ```
 
 ## How the LLM is used
@@ -271,6 +271,22 @@ These came up while building the project and are worth discussing in a write-up:
     words, so genuine long sentences stay whole). (b) For sections split into chunks, "first try" only
     measured the first chunk. It now measures the whole first draft, which revealed that naproxen's first
     draft had invented a number that the retry loop then removed.
+11. **Speed: most of the wait was the local meaning-check model, not the LLM.** Profiling one run gave
+    LLM calls 9 s, model loading 33.5 s and model checking 19 s. Fixes, each measured:
+    - Load the downloaded model directly instead of first asking Hugging Face whether it changed, and
+      import only the DeBERTa code rather than `transformers`' general Auto classes, which load code
+      for hundreds of model types (cold load 33 s → 8–17 s).
+    - Start loading the model in the background: when the web page opens, and at the start of every run.
+    - Check each sentence against its best-matching candidate first, and only check the others if that
+      one doesn't support it. Decisions are identical across all 33 evaluation sections (scores differ by
+      at most 0.0000014); ibuprofen's checks went from 29 s to 13 s.
+    - Process label sections in parallel (`parallel_sections` in `config.yaml`). The model runs on one
+      dedicated thread: using it from several threads crashed PyTorch on Windows, even one at a time.
+    - Turn off the `openai` library's hidden retries, which multiplied our own (up to 12 requests per call).
+    - A compressed (int8) model was faster but changed 12 of 60 decisions, so it was rejected.
+
+    Web app result: clicking "Simplify" straight after opening the page takes ~15 s for ibuprofen
+    (was 44–66 s), and each later drug takes 1–13 s plus the LLM's ~3–6 s for new drugs.
 
 ## Known limitations
 

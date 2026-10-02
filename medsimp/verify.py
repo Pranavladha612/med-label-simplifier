@@ -20,28 +20,85 @@ The model (cross-encoder/nli-deberta-v3-small, ~140M parameters) runs locally on
 It is downloaded automatically the first time (about 500 MB).
 """
 
+import json
 import re
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from . import config
 
 _tokenizer = None
 _model = None
+# The model lives on ONE dedicated thread, and every load and prediction runs there. Label sections are
+# processed in parallel threads, but PyTorch on Windows crashed (access violation) when one model was
+# used from several different threads, even one at a time. Funnelling all model work through a single
+# worker thread also keeps the Hugging Face tokenizer, which isn't thread-safe, on one thread.
+_model_thread = ThreadPoolExecutor(max_workers=1, thread_name_prefix="nli-model")
+
+
+def _model_classes(local_only: bool):
+    """The tokenizer and model classes for config.NLI_MODEL.
+
+    `from transformers import Auto...` imports code for hundreds of model types (~15 s on Windows).
+    For the default DeBERTa-v2/v3 model we import just that one family (~8 s); any other model
+    set in config.yaml falls back to the general Auto classes.
+    """
+    from huggingface_hub import hf_hub_download
+
+    with open(hf_hub_download(config.NLI_MODEL, "config.json", local_files_only=local_only), encoding="utf-8") as f:
+        model_type = json.load(f).get("model_type")
+    if model_type == "deberta-v2":
+        from transformers.models.deberta_v2.modeling_deberta_v2 import DebertaV2ForSequenceClassification
+        from transformers.models.deberta_v2.tokenization_deberta_v2 import DebertaV2Tokenizer
+        return DebertaV2Tokenizer, DebertaV2ForSequenceClassification
+    from transformers import AutoModelForSequenceClassification, AutoTokenizer
+    return AutoTokenizer, AutoModelForSequenceClassification
 
 
 def _load_model():
     global _tokenizer, _model
     if _model is None:
-        from transformers import AutoModelForSequenceClassification, AutoTokenizer
-
-        _tokenizer = AutoTokenizer.from_pretrained(config.NLI_MODEL)
-        _model = AutoModelForSequenceClassification.from_pretrained(config.NLI_MODEL)
+        # Use the downloaded copy directly; otherwise every start first asks the Hugging Face servers
+        # whether the model changed. Only go online on the very first run, to download it.
+        for local_only in (True, False):
+            try:
+                tokenizer_cls, model_cls = _model_classes(local_only)
+                _tokenizer = tokenizer_cls.from_pretrained(config.NLI_MODEL, local_files_only=local_only)
+                _model = model_cls.from_pretrained(config.NLI_MODEL, local_files_only=local_only)
+                break
+            except OSError:
+                if not local_only:
+                    raise
         _model.eval()
     return _tokenizer, _model
 
 
+def warm_up() -> None:
+    """Load the model and run one tiny prediction, so the first real check isn't slowed by start-up costs."""
+    nli([("Take 1 tablet.", "Take one tablet.")])
+
+
+_warm_up: Future | None = None
+
+
+def start_warm_up() -> None:
+    """Queue warm_up() on the model thread without waiting (once per process). The pipeline calls this at
+    the start of a run, so the model loads while the label downloads and the LLM writes its first rewrite."""
+    global _warm_up
+    if _warm_up is None:
+        _warm_up = _model_thread.submit(_predict, [("Take 1 tablet.", "Take one tablet.")])
+
+
 def nli(pairs: list[tuple[str, str]], batch_size: int = 32) -> list[dict[str, float]]:
-    """For each (premise, hypothesis) pair return {'entailment': p, 'neutral': p, 'contradiction': p}."""
+    """For each (premise, hypothesis) pair return {'entailment': p, 'neutral': p, 'contradiction': p}.
+    The work runs on the model thread; this call just waits for the answer."""
+    if not pairs:
+        return []
+    return _model_thread.submit(_predict, pairs, batch_size).result()
+
+
+def _predict(pairs: list[tuple[str, str]], batch_size: int = 32) -> list[dict[str, float]]:
+    """Runs only on the model thread."""
     import torch
 
     tokenizer, model = _load_model()
@@ -53,7 +110,7 @@ def nli(pairs: list[tuple[str, str]], batch_size: int = 32) -> list[dict[str, fl
             [p for p, _ in batch], [h for _, h in batch],
             padding=True, truncation=True, max_length=256, return_tensors="pt",
         )
-        with torch.no_grad():
+        with torch.inference_mode():
             probs = torch.softmax(model(**inputs).logits, dim=-1)
         for row in probs:
             results.append({label: float(p) for label, p in zip(labels, row)})
@@ -174,13 +231,24 @@ def _check_direction(
 
     k = config.NLI_CANDIDATES
     candidates = [_most_similar(h, premises, k) for h in hypotheses]
-    pairs = [(p, h) for h, cands in zip(hypotheses, candidates) for p, _ in cands]
-    scores = nli(pairs)
 
-    flags, supported, i = [], 0, 0
-    for hypothesis, cands in zip(hypotheses, candidates):
-        rows = scores[i:i + len(cands)]
-        i += len(cands)
+    # Stage 1: every hypothesis against its single best-matching premise. Most are supported right
+    # away, and then the other candidates can't change the outcome.
+    first = nli([(cands[0][0], h) for h, cands in zip(hypotheses, candidates)])
+    # Stage 2: only the hypotheses not yet supported get their remaining candidates checked.
+    # This gives exactly the same decisions as checking all candidates, with far fewer model calls.
+    todo = [i for i, row in enumerate(first) if row["entailment"] < config.ENTAIL_THRESHOLD]
+    rest = nli([(p, hypotheses[i]) for i in todo for p, _ in candidates[i][1:]])
+    scores = {i: [row] for i, row in enumerate(first)}
+    pos = 0
+    for i in todo:
+        n = len(candidates[i]) - 1
+        scores[i] += rest[pos:pos + n]
+        pos += n
+
+    flags, supported = [], 0
+    for i, (hypothesis, cands) in enumerate(zip(hypotheses, candidates)):
+        rows = scores[i]
         best_entail = max(r["entailment"] for r in rows)
         worst = max(range(len(rows)), key=lambda j: rows[j]["contradiction"])
         best_contra = rows[worst]["contradiction"]

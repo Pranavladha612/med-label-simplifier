@@ -24,6 +24,7 @@ simplification:
   target_grade: 5                           # reading level the rewrite aims for
   max_fix_retries: 2                        # regenerate at most this many times when checks fail
   max_chunk_words: 250                      # long sections are split so each piece fits the NLI model
+  parallel_sections: 4                      # label sections processed at the same time (free tier allows ~20 requests/min)
   # openFDA label sections to simplify. OTC labels use the first group, prescription labels the second.
   sections:
     - dosage_and_administration

@@ -56,7 +56,10 @@ def _get_client() -> OpenAI:
                 "(get one at https://openrouter.ai/keys)."
             )
         _client = OpenAI(
-            base_url=config.OPENROUTER_BASE_URL, api_key=config.OPENROUTER_API_KEY, timeout=config.TIMEOUT_SECONDS
+            base_url=config.OPENROUTER_BASE_URL, api_key=config.OPENROUTER_API_KEY, timeout=config.TIMEOUT_SECONDS,
+            # _ask_with_retries does the retrying. The library's own 2 hidden retries would multiply it
+            # (up to 12 requests for one call), each counting against the free-tier rate limits.
+            max_retries=0,
         )
     return _client
 

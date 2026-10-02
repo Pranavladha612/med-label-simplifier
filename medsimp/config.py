@@ -39,6 +39,7 @@ _simp = _cfg["simplification"]
 TARGET_GRADE = _simp["target_grade"]
 MAX_RETRIES = _simp["max_fix_retries"]
 MAX_CHUNK_WORDS = _simp["max_chunk_words"]
+PARALLEL_SECTIONS = _simp.get("parallel_sections", 1)
 SECTIONS = list(_simp["sections"])
 
 # --- Verification (NLI model, runs locally on CPU) ---
