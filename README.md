@@ -65,6 +65,7 @@ med-label-simplifier/
 ├── config.yaml              ← configuration file: model, fallbacks, temperature, retries, thresholds, sections
 ├── prompts/prompts.yaml     ← prompt file: system, simplify and fix prompts, with design notes
 ├── .env.example             ← template for the API key (the real .env is git-ignored)
+├── .streamlit/config.toml   ← web app settings (file watcher off: it slowed start-up)
 ├── requirements.txt
 ├── app.py                   ← Streamlit web app
 ├── cli.py                   ← command-line tool
@@ -283,10 +284,14 @@ These came up while building the project and are worth discussing in a write-up:
     - Process label sections in parallel (`parallel_sections` in `config.yaml`). The model runs on one
       dedicated thread: using it from several threads crashed PyTorch on Windows, even one at a time.
     - Turn off the `openai` library's hidden retries, which multiplied our own (up to 12 requests per call).
+    - Turn off Streamlit's file watcher (`.streamlit/config.toml`). It scans every loaded library, and on
+      `transformers` that forced hundreds of unrelated model modules to import (each failing without
+      `torchvision`), slowing the first result in the real browser from ~20 s to 25–32 s.
     - A compressed (int8) model was faster but changed 12 of 60 decisions, so it was rejected.
 
-    Web app result: clicking "Simplify" straight after opening the page takes ~15 s for ibuprofen
-    (was 44–66 s), and each later drug takes 1–13 s plus the LLM's ~3–6 s for new drugs.
+    Web app result, measured in a real browser: clicking "Simplify" straight after starting the app takes
+    ~20 s for ibuprofen including the one-time model load (was 44–66 s), and later drugs take about 2–13 s,
+    plus the LLM's ~3–6 s for a drug that hasn't been run before.
 
 ## Known limitations
 

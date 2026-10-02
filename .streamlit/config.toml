@@ -1,0 +1,7 @@
+# Streamlit settings for this app (used when you run `streamlit run app.py` from this folder).
+
+[server]
+# Streamlit's file watcher scans every loaded library for files to watch. On `transformers` that forces
+# hundreds of unrelated model modules to import (and fail without torchvision), which slowed the first
+# result by tens of seconds. The watcher only reloads the app when you edit its code, so it's off here.
+fileWatcherType = "none"
